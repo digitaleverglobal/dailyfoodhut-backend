@@ -482,6 +482,7 @@ const ensureProductStatusNoteColumns = async () => {
     allowNull: true,
     defaultValue: false,
   });
+  await maybeAdd("deliveryAreaIds", { type: DataTypes.JSON, allowNull: true });
   await maybeAdd("note", { type: DataTypes.STRING, allowNull: true });
   await maybeAdd("status", {
     type: DataTypes.STRING(32),

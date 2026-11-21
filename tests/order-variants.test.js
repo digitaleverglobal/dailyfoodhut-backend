@@ -2,16 +2,20 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const nodePath = require('node:path');
 
 // Load a module with a fake models/index.js; no production DB access.
 function load(path, db) {
+  const file = require.resolve(path);
   const context = { module: { exports: {} }, console, require(name) {
     if (name === '../../../models') return db;
     if (name.includes('ApiError')) return class extends Error { constructor(code, message) { super(message); this.statusCode = code; } };
-    if (name.includes('shared/productVariants')) return require('../shared/productVariants');
-    return require(name);
+    if (!name.startsWith('.')) return require(name);
+    // Relative requires resolve from the loaded module; sibling services share the fake db.
+    const target = require.resolve(nodePath.resolve(nodePath.dirname(file), name));
+    return target.includes(`${nodePath.sep}app${nodePath.sep}modules${nodePath.sep}`) ? load(target, db) : require(target);
   } };
-  vm.runInNewContext(fs.readFileSync(require.resolve(path), 'utf8'), context);
+  vm.runInNewContext(fs.readFileSync(file, 'utf8'), context);
   return context.module.exports;
 }
 
@@ -185,4 +189,43 @@ test('staff orders keep staff prices but resolve variants and totals', async () 
     { subtotal: 1900, deliveryCharge: 80, discount: 50, total: 1930 });
   await assert.rejects(resolveStaffItems([{ id: 1, price: 500, qty: 1 }]), /variant/);
   await assert.rejects(resolveStaffItems([]), /No items/);
+});
+
+test('a delivery zone without a district sets the charge and keeps the address as typed', async () => {
+  const db = pricingDb();
+  db.deliveryArea = { async findAll() {
+    return [
+      { Id: 1, district: '', area: 'Inside Dhaka', charge: '80.00', status: 'Active' },
+      { Id: 2, district: '', area: 'Outside Dhaka', charge: '130.00', status: 'Active' },
+    ];
+  } };
+  const { priceOrderItems } = load('../app/modules/order/orderPricing', db);
+  const item = { id: 2, qty: 1 };
+  const inside = await priceOrderItems({ deliveryAreaId: 1, customerAddress: 'Khilgaon', items: [item] });
+  assert.equal(inside.deliveryCharge, 80);
+  assert.equal(inside.customerDistrict, 'Inside Dhaka');
+  assert.equal(inside.customerAddress, 'Khilgaon');
+  assert.equal((await priceOrderItems({ deliveryAreaId: 2, items: [item] })).deliveryCharge, 130);
+  await assert.rejects(priceOrderItems({ customerDistrict: 'Dhaka', items: [item] }));
+});
+
+test('a product limited to some delivery areas rejects the others', async () => {
+  const db = pricingDb();
+  db.deliveryArea = { async findAll() {
+    return [
+      { Id: 1, district: '', area: 'Inside Dhaka', charge: '80.00', status: 'Active' },
+      { Id: 2, district: '', area: 'Outside Dhaka', charge: '130.00', status: 'Active' },
+    ];
+  } };
+  const findAll = db.product.findAll;
+  db.product.findAll = async (query) => (await findAll(query)).map((product) =>
+    (product.Id === 2 ? { ...product, deliveryAreaIds: '[1]' } : product));
+  const { priceOrderItems } = load('../app/modules/order/orderPricing', db);
+  const limited = { id: 2, qty: 1 };
+  assert.equal((await priceOrderItems({ deliveryAreaId: 1, items: [limited] })).deliveryCharge, 80);
+  await assert.rejects(priceOrderItems({ deliveryAreaId: 2, items: [limited] }), /ডেলিভারি হয় না/);
+  // A product without a limit allows every area.
+  assert.equal((await priceOrderItems({ deliveryAreaId: 2, items: [{ id: 1, variantId: 11, qty: 1 }] })).deliveryCharge, 130);
+  // Incomplete drafts never fail on it.
+  assert.equal((await priceOrderItems({ deliveryAreaId: 2, items: [limited] }, { strict: false })).deliveryCharge, 0);
 });

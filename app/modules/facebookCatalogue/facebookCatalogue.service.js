@@ -40,8 +40,11 @@ const generateFeed = async () => {
     include: [{ model: db.variation, as: "variations", required: false }],
   });
 
-  const FRONTEND_BASE = (process.env.ORIGIN_URL || process.env.FRONTEND_URL || "https://yourdomain.com").replace(/\/$/, "");
-  const BACKEND_BASE = (process.env.BACKEND_URL || process.env.API_URL || process.env.BASE_URL || process.env.ORIGIN_URL || "https://holydeen.com").replace(/\/$/, "");
+  // Dedicated vars first: ORIGIN_URL/BACKEND_URL are shared with other features
+  // and may point at another store or localhost.
+  const FRONTEND_BASE = (process.env.CATALOGUE_SITE_URL || "https://dailyfoodhut.com").replace(/\/$/, "");
+  const BACKEND_BASE = (process.env.CATALOGUE_IMAGE_BASE_URL || "https://api.dailyfoodhut.com").replace(/\/$/, "");
+  const BRAND = process.env.CATALOGUE_BRAND || "Daily Food Hut";
 
   const items = products.map((p) => {
     const plain = p.get({ plain: true });
@@ -67,7 +70,7 @@ const generateFeed = async () => {
       <g:availability>${availability}</g:availability>
       <g:price>${regularPrice.toFixed(2)} BDT</g:price>${oldPrice > salePrice && salePrice > 0 ? `\n      <g:sale_price>${salePrice.toFixed(2)} BDT</g:sale_price>` : ""}
       <g:sku>${xmlText(sku)}</g:sku>
-      <g:brand>${cdata(process.env.STORE_NAME || "Kafela Mart")}</g:brand>${weight ? `\n      <g:shipping_weight>${xmlText(weight)}</g:shipping_weight>` : ""}
+      <g:brand>${cdata(BRAND)}</g:brand>${weight ? `\n      <g:shipping_weight>${xmlText(weight)}</g:shipping_weight>` : ""}
     </item>`;
   }).join("");
 

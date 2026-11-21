@@ -28,6 +28,8 @@ module.exports = (sequelize, DataTypes) => {
       features:        { type: DataTypes.JSON,          allowNull: true },
       bestDeals:       { type: DataTypes.BOOLEAN,       allowNull: true, defaultValue: false },
       freeShipping:    { type: DataTypes.BOOLEAN,       allowNull: true, defaultValue: false },
+      // Delivery area Ids (Website Setting → Delivery Area) this product ships to; empty = all.
+      deliveryAreaIds: { type: DataTypes.JSON,          allowNull: true },
       flashSale:       { type: DataTypes.BOOLEAN,       allowNull: true, defaultValue: false },
       stockId:         { type: DataTypes.INTEGER(10),   allowNull: true },
       date:            { type: DataTypes.DATEONLY,      allowNull: true },

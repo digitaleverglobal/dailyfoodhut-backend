@@ -85,8 +85,17 @@ const chargeAmount = (charge) => {
   return charge && Number.isFinite(amount) && amount >= 0 ? amount : null;
 };
 
+// The storefront checkout sends "Inside Dhaka City" / "Outside Dhaka City" as the district.
+const deliveryZoneOf = (district) => {
+  const value = String(district || "").trim().toLowerCase();
+  if (/^inside\s*dhaka/.test(value)) return "inside";
+  if (/^outside\s*dhaka/.test(value)) return "outside";
+  return null;
+};
+
 const getWebsiteDeliveryCharge = async (district) => {
-  const isDhaka = String(district || "").trim().toLowerCase() === "dhaka";
+  const value = String(district || "").trim().toLowerCase();
+  const isDhaka = value === "dhaka" || deliveryZoneOf(value) === "inside";
   const minimum = isDhaka ? DEFAULT_DHAKA_CHARGE : DEFAULT_OUTSIDE_DHAKA_CHARGE;
   const charges = db.deliveryCharge
     ? await db.deliveryCharge.findAll({
@@ -105,7 +114,19 @@ const getWebsiteDeliveryCharge = async (district) => {
 
 // Delivery areas (Website Setting → Delivery Area) price delivery per district + area.
 // Returns null while none are configured, so the older district charge still applies.
-const resolveDeliveryArea = async (payload, strict) => {
+// Products can be limited to some delivery areas (empty = all); an order can use only the
+// areas every product allows. Returns null when nothing is limited.
+const allowedDeliveryAreaIds = (products) => {
+  let allowed = null;
+  for (const product of products) {
+    const ids = parseArray(product?.deliveryAreaIds).map(Number).filter((id) => id > 0);
+    if (!ids.length) continue;
+    allowed = allowed ? allowed.filter((id) => ids.includes(id)) : ids;
+  }
+  return allowed;
+};
+
+const resolveDeliveryArea = async (payload, strict, allowedIds = null) => {
   const areas = db.deliveryArea
     ? await db.deliveryArea.findAll({ where: { status: "Active" }, raw: true })
     : [];
@@ -114,22 +135,29 @@ const resolveDeliveryArea = async (payload, strict) => {
   const areaId = Number(payload.deliveryAreaId);
   const selected = areaId > 0 ? areas.find((area) => Number(area.Id) === areaId) : null;
   if (!selected) {
-    if (strict) throw new ApiError(400, "জেলা ও এরিয়া নির্বাচন করুন");
+    if (strict) throw new ApiError(400, "ডেলিভারি এরিয়া নির্বাচন করুন");
+    return { charge: 0, fields: {} };
+  }
+  if (allowedIds && !allowedIds.includes(Number(selected.Id))) {
+    if (strict) throw new ApiError(400, `এই অর্ডারের পণ্য "${selected.area}" এ ডেলিভারি হয় না`);
     return { charge: 0, fields: {} };
   }
 
   const address = String(payload.customerAddress || "").trim();
-  const mentionsArea = address.toLowerCase().includes(selected.area.toLowerCase());
-  return {
-    charge: chargeAmount({ amount: selected.charge }) ?? 0,
-    fields: {
-      deliveryAreaId: selected.Id,
-      deliveryArea: selected.area,
-      customerDistrict: selected.district,
-      // Admin views, invoices and courier bookings show the address, so the area goes there too.
-      customerAddress: !address || mentionsArea ? address || selected.area : `${address}, ${selected.area}`,
-    },
+  const district = String(selected.district || "").trim();
+  const fields = {
+    deliveryAreaId: selected.Id,
+    deliveryArea: selected.area,
+    // A zone without a district (e.g. "Inside Dhaka") is saved as the order's district.
+    customerDistrict: district || selected.area,
+    customerAddress: address,
   };
+  if (district) {
+    // Admin views, invoices and courier bookings show the address, so a real area goes there too.
+    const mentionsArea = address.toLowerCase().includes(selected.area.toLowerCase());
+    fields.customerAddress = !address || mentionsArea ? address || selected.area : `${address}, ${selected.area}`;
+  }
+  return { charge: chargeAmount({ amount: selected.charge }) ?? 0, fields };
 };
 
 const loadProducts = async (ids) => {
@@ -364,7 +392,7 @@ const priceWebsiteOrder = async (payload, strict) => {
 
   const items = payload.items.flatMap((item) => (isCombo(item) ? priceCombo(item) : [priceLine(item)]));
 
-  const delivery = await resolveDeliveryArea(payload, strict);
+  const delivery = await resolveDeliveryArea(payload, strict, allowedDeliveryAreaIds([...products.values()]));
   if (delivery) {
     return {
       ...payload,

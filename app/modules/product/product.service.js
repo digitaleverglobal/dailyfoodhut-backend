@@ -285,6 +285,12 @@ const syncProductNameReferences = async (
   );
 };
 
+// Multipart forms send the list as a JSON string. Empty means every delivery area.
+const parseDeliveryAreaIds = (value) => {
+  const ids = [...new Set(parseJsonArray(value).map(Number).filter((id) => id > 0))];
+  return ids.length ? ids : null;
+};
+
 const insertIntoDB = async (data, files = []) => {
   const {
     name, slug, sku,
@@ -325,6 +331,7 @@ const insertIntoDB = async (data, files = []) => {
     freeShipping:    freeShipping === 'true' || freeShipping === true,
     flashSale:       flashSale === 'true'    || flashSale === true,
     status:          status || "Active",
+    deliveryAreaIds: parseDeliveryAreaIds(data.deliveryAreaIds),
     date:            new Date().toISOString().slice(0, 10),
   };
 
@@ -565,6 +572,10 @@ const updateOneFromDB = async (id, payload, files = []) => {
       flashSale:       flashSale === 'true'    || flashSale === true,
       status:          status || "Active",
     };
+    // Left unchanged when a client doesn't send it.
+    if (Object.prototype.hasOwnProperty.call(payload, "deliveryAreaIds")) {
+      data.deliveryAreaIds = parseDeliveryAreaIds(payload.deliveryAreaIds);
+    }
 
     await Product.update(data, { where: { Id: id }, transaction });
 
@@ -726,6 +737,7 @@ const toStorefrontProduct = (product, maps = {}) => {
     variants,
     sku: plain.sku,
     freeShipping: Boolean(plain.freeShipping),
+    deliveryAreaIds: parseJsonArray(plain.deliveryAreaIds).map(Number).filter((id) => id > 0),
     bestDeals: Boolean(plain.bestDeals),
     flashSale: Boolean(plain.flashSale),
     inStock: stock > 0 || preOrder,

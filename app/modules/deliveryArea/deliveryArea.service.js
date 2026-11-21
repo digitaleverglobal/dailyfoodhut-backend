@@ -4,11 +4,12 @@ const db = require("../../../models");
 const ApiError = require("../../../error/ApiError");
 const M = () => db.deliveryArea;
 
-const LIST_ORDER = [["district", "ASC"], ["sortOrder", "ASC"], ["area", "ASC"]];
+// Checkout lists the areas in this order (e.g. Inside Dhaka, Outside Dhaka).
+const LIST_ORDER = [["sortOrder", "ASC"], ["area", "ASC"]];
 
-const cleanText = (value, field, max) => {
+const cleanText = (value, field, max, required = true) => {
   const text = String(value ?? "").trim().replace(/\s+/g, " ");
-  if (!text) throw new ApiError(400, `${field} is required`);
+  if (!text && required) throw new ApiError(400, `${field} is required`);
   return text.slice(0, max);
 };
 
@@ -27,8 +28,9 @@ const cleanStatus = (value) =>
 const cleanPayload = (payload = {}, isCreate = false) => {
   const has = (key) => isCreate || Object.prototype.hasOwnProperty.call(payload, key);
   const data = {};
-  if (has("district")) data.district = cleanText(payload.district, "District", 100);
-  if (has("area")) data.area = cleanText(payload.area, "Area", 150);
+  // District is optional: an area can be a zone such as "Inside Dhaka".
+  if (has("district")) data.district = cleanText(payload.district, "District", 100, false);
+  if (has("area")) data.area = cleanText(payload.area, "Area name", 150);
   if (has("charge")) data.charge = cleanCharge(payload.charge);
   if (has("sortOrder")) data.sortOrder = Math.trunc(Number(payload.sortOrder) || 0);
   if (has("status")) data.status = cleanStatus(payload.status);
@@ -39,7 +41,7 @@ const ensureUnique = async ({ district, area }, exceptId) => {
   const where = { district, area };
   if (exceptId) where.Id = { [Op.ne]: exceptId };
   if (await M().findOne({ where })) {
-    throw new ApiError(400, `"${area}" already exists in ${district}`);
+    throw new ApiError(400, district ? `"${area}" already exists in ${district}` : `"${area}" already exists`);
   }
 };
 
