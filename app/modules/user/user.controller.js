@@ -189,7 +189,7 @@ const updateUserFromDB = catchAsync(async (req, res) => {
 });
 
 const deleteUserFromDB = catchAsync(async (req, res) => {
-  const result = await UserService.deleteIdFromDB(req.params.id);
+  const result = await UserService.deleteUserFromDB(req.user, req.params.id);
   sendResponse(res, {
     statusCode: 200,
     success: true,

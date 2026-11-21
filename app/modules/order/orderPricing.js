@@ -145,19 +145,17 @@ const resolveDeliveryArea = async (payload, strict, allowedIds = null) => {
 
   const address = String(payload.customerAddress || "").trim();
   const district = String(selected.district || "").trim();
-  const fields = {
-    deliveryAreaId: selected.Id,
-    deliveryArea: selected.area,
-    // A zone without a district (e.g. "Inside Dhaka") is saved as the order's district.
-    customerDistrict: district || selected.area,
-    customerAddress: address,
+  return {
+    charge: chargeAmount({ amount: selected.charge }) ?? 0,
+    fields: {
+      deliveryAreaId: selected.Id,
+      // The area is kept in its own field; the address stays as the customer typed it.
+      deliveryArea: selected.area,
+      // A zone without a district (e.g. "Inside Dhaka") is saved as the order's district.
+      customerDistrict: district || selected.area,
+      customerAddress: address,
+    },
   };
-  if (district) {
-    // Admin views, invoices and courier bookings show the address, so a real area goes there too.
-    const mentionsArea = address.toLowerCase().includes(selected.area.toLowerCase());
-    fields.customerAddress = !address || mentionsArea ? address || selected.area : `${address}, ${selected.area}`;
-  }
-  return { charge: chargeAmount({ amount: selected.charge }) ?? 0, fields };
 };
 
 const loadProducts = async (ids) => {

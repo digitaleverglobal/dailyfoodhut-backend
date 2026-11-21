@@ -205,14 +205,16 @@ const getUserById = async (id) => {
   return result;
 };
 
-const deleteUserFromDB = async (id) => {
-  const result = await User.destroy({
-    where: {
-      Id: id,
-    },
-  });
+const deleteUserFromDB = async (actor, id) => {
+  if (actor?.Id === Number(id)) {
+    throw new ApiError(400, "You cannot delete your own account");
+  }
+  const user = await User.findOne({ where: { Id: id } });
+  if (!user) throw new ApiError(404, "User not found");
 
-  return result;
+  // Orders keep their history: assignedEmployeeId/assignedById are SET NULL by the DB.
+  await user.destroy();
+  return sanitizeUser(user);
 };
 
 const updateUserFromDB = async (id, payload, actor = null) => {
